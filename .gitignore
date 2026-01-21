@@ -16,6 +16,7 @@ signing-temp/
 .env.*.local
 .envrc
 .direnv/
+.secrets
 
 # macOS
 .DS_Store

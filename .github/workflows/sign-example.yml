@@ -1,0 +1,44 @@
+name: Sign Application Example
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip-file:
+        description: 'Path to ZIP file to sign'
+        required: true
+        default: 'app-v1.0.0.zip'
+      version:
+        description: 'Version (leave empty for auto-detection)'
+        required: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Display results
+        run: |
+          ls -lha
+          echo "file: ${{ github.event.inputs.zip-file }}"
+
+      - name: Sign ZIP file
+        id: sign
+        uses: ./  # Use 'your-username/az-cli@main' when using from another repo
+        with:
+          file: ${{ github.event.inputs.zip-file }}
+          version: ${{ github.event.inputs.version }}
+          alias: ${{ secrets.AZURE_SIGNING_ALIAS }}
+          region: ${{ secrets.AZURE_SIGNING_REGION }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          verbose: 'true'
+
+      - name: Display results
+        run: |
+          echo "Signed file: ${{ steps.sign.outputs.signed-file }}"
+          echo "Version: ${{ steps.sign.outputs.version }}"
+          ls -lh ${{ steps.sign.outputs.signed-file }}
