@@ -1,0 +1,128 @@
+name: 'Azure Code Signing'
+description: 'Sign Windows executables and Java archives using Azure Trusted Signing'
+author: 'RJ Sheperd'
+
+branding:
+  icon: 'lock'
+  color: 'blue'
+
+inputs:
+  file:
+    description: 'Path to the ZIP file to sign'
+    required: true
+  version:
+    description: 'Version string for the output file (auto-detected from filename if not provided)'
+    required: false
+  alias:
+    description: 'Azure Trusted Signing alias'
+    required: true
+  region:
+    description: 'Azure region domain (e.g., eastus.codesigning.azure.net)'
+    required: true
+  azure-tenant-id:
+    description: 'Azure tenant ID for authentication'
+    required: true
+  azure-client-id:
+    description: 'Azure client ID (service principal) for authentication'
+    required: true
+  azure-client-secret:
+    description: 'Azure client secret for authentication'
+    required: true
+  parallel-jobs:
+    description: 'Number of parallel signing jobs'
+    required: false
+    default: '8'
+  extract-dir:
+    description: 'Directory to extract ZIP'
+    required: false
+    default: 'signing-temp'
+  keep-temp:
+    description: 'Keep temporary extracted files after signing'
+    required: false
+    default: 'false'
+  verbose:
+    description: 'Enable verbose output'
+    required: false
+    default: 'false'
+
+outputs:
+  signed-file:
+    description: 'Path to the signed ZIP file'
+    value: ${{ steps.sign.outputs.signed-file }}
+  version:
+    description: 'Version used for signing (detected or provided)'
+    value: ${{ steps.sign.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [[ ! -f "${{ inputs.file }}" ]]; then
+          echo "::error::ZIP file not found: ${{ inputs.file }}"
+          exit 1
+        fi
+
+    - name: Setup Nix
+      uses: nicknovitski/nix-develop@v1
+
+    - name: Sign ZIP file
+      id: sign
+      env:
+        TS_ALIAS: ${{ inputs.alias }}
+        AZURE_REGION_DOMAIN: ${{ inputs.region }}
+      run: |
+        # Build command arguments
+        ARGS="-f ${{ inputs.file }}"
+
+        if [[ -n "${{ inputs.version }}" ]]; then
+          ARGS="$ARGS -v ${{ inputs.version }}"
+        fi
+
+        ARGS="$ARGS -a ${{ inputs.alias }}"
+        ARGS="$ARGS -r ${{ inputs.region }}"
+        ARGS="$ARGS -j ${{ inputs.parallel-jobs }}"
+        ARGS="$ARGS -d ${{ inputs.extract-dir }}"
+
+        if [[ "${{ inputs.keep-temp }}" == "true" ]]; then
+          ARGS="$ARGS -k"
+        fi
+
+        if [[ "${{ inputs.verbose }}" == "true" ]]; then
+          ARGS="$ARGS -V"
+        fi
+
+        # Run signing script
+        cd "${{ github.workspace }}"
+        "${{ github.action_path }}/sign-zip.sh" $ARGS
+
+        # Determine output file name
+        ZIP_BASENAME="$(basename "${{ inputs.file }}" .zip)"
+
+        # Extract or use provided version
+        if [[ -n "${{ inputs.version }}" ]]; then
+          VERSION="${{ inputs.version }}"
+        else
+          # Extract version from filename
+          if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not detect version from filename"
+            exit 1
+          fi
+        fi
+
+        SIGNED_FILE="${ZIP_BASENAME}-${VERSION}-signed.zip"
+
+        # Set outputs
+        echo "signed-file=${SIGNED_FILE}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+        echo "::notice::Signing complete: ${SIGNED_FILE}"

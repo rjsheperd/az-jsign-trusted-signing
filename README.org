@@ -1,0 +1,175 @@
+* Azure / JSign Trusted Signing
+
+A GitHub Action for signing Windows executables (.exe, .dll) and Java
+archives (.jar) using [[https://azure.microsoft.com/en-us/products/artifact-signing][Azure +Trusted+ Artifact Signing]] service. Also
+works on Unix/Linux systems with the support of [[https://nixos.org][Nix]].
+
+** Features
+
+- Signs Windows binaries (EXE, DLL) and Java Archives using
+  [[https://github.com/ebourg/jsign][JSign]]
+- Parallel signing for faster processing
+- Automatic version detection from filenames
+- Automatic artifact upload
+
+** Prerequisites
+
+*** Azure Setup
+
+1. *Azure Trusted Signing Account*: You need an active Azure account
+2. *Service Principal*: Create a service principal with permissions to
+   access the signing service
+3. *Certificate Profile*: Set up a certificate profile in Azure
+   _{Trusted} Artifact Signing
+
+*** GitHub Secrets
+
+Configure these secrets in your repository (Settings → Secrets and
+variables → Actions):
+
+| Secret Name            | Description                                               |
+|------------------------+-----------------------------------------------------------|
+| =AZURE_TENANT_ID=      | Your Azure AD tenant ID                                   |
+| =AZURE_CLIENT_ID=      | Service principal client ID                               |
+| =AZURE_CLIENT_SECRET=  | Service principal client secret                           |
+| =AZURE_SIGNING_ALIAS=  | Azure Trusted Signing certificate profile alias           |
+| =AZURE_SIGNING_REGION= | Azure region domain (e.g. =eastus.codesigning.azure.net=) |
+
+** Usage
+
+*** Example
+
+#+begin_src yaml
+name: Sign and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  sign-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build application
+        run: |
+          # Build your application
+          # Create unsigned ZIP: my-app-1.2.3.zip
+
+      - name: Sign application
+        id: sign
+        uses: rjsheped/az-jsign-trusted-signing@main
+        with:
+          file: 'my-app-1.2.3.zip'
+          alias: ${{ secrets.AZURE_SIGNING_ALIAS }}
+          region: ${{ secrets.AZURE_SIGNING_REGION }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.sign.outputs.signed-file }}
+          tag_name: v${{ steps.sign.outputs.version }}
+#+end_src
+
+** Inputs
+
+| Input                 | Description                                    | Required | Default        |
+|-----------------------+------------------------------------------------+----------+----------------|
+| =file=                | Path to the ZIP file to sign                   | Yes      | -              |
+| =version=             | Version string (auto-detected if not provided) | No       | Auto-detected  |
+| =alias=               | Azure Trusted Signing alias                    | Yes      | -              |
+| =region=              | Azure region domain                            | Yes      | -              |
+| =azure-tenant-id=     | Azure tenant ID                                | Yes      | -              |
+| =azure-client-id=     | Azure client ID                                | Yes      | -              |
+| =azure-client-secret= | Azure client secret                            | Yes      | -              |
+| =parallel-jobs=       | Number of parallel signing jobs                | No       | =8=            |
+| =extract-dir=         | Directory to extract ZIP                       | No       | =signing-temp= |
+| =keep-temp=           | Keep temporary files                           | No       | =false=        |
+| =verbose=             | Enable verbose output                          | No       | =false=        |
+
+** Outputs
+
+| Output        | Description                 |
+|---------------+-----------------------------|
+| =signed-file= | Path to the signed ZIP file |
+| =version=     | Version used for signing    |
+
+** Version Detection
+
+The action automatically detects the version from the filename if not
+explicitly provided:
+
+| Filename Pattern     | Detected Version |
+|----------------------+------------------|
+| =app-1.0.0.zip=      | =1.0.0=          |
+| =app-v1.0.0.zip=     | =1.0.0=          |
+| =app_v2.1.3.zip=     | =2.1.3=          |
+| =app-1.0.0-beta.zip= | =1.0.0-beta=     |
+
+** ZIP File Requirements
+
+Your ZIP file should contain: - Windows executables (=.exe=) and/or
+libraries (=.dll=) - Java archives (=.jar=)
+
+The action will: 1. Extract the ZIP file 2. Sign all =.exe= and =.dll=
+files in parallel 3. Sign all =.jar= files 4. Re-package into a new ZIP
+with =-signed= suffix
+
+** Troubleshooting
+
+*** Authentication Failures
+
+If you see authentication errors: - Verify your service principal has
+the correct permissions - Ensure the secrets are correctly set in your
+repository - Check that the tenant ID matches your Azure AD tenant
+
+*** JSign Download Issues
+
+The action downloads JSSign 7.4 automatically. If downloads fail: -
+Check your network connectivity - Verify GitHub Actions can access
+external URLs - Consider caching the JSSign JAR
+
+*** Version Detection Issues
+
+If version detection fails: - Provide an explicit version using the
+=version= input - Ensure your filename follows a supported pattern - Use
+verbose mode to see detection details
+
+** Local Development
+
+You can also use the signing script directly:
+
+1. Using [[https://nixos.org][Nix]], start a new development environment
+   (you will need to have enabled [[https://nixos.wiki/wiki/flakes][nix
+   flakes]])
+
+#+begin_src sh
+nix develop
+#+end_src
+
+2. [@2] Sign your application
+
+#+begin_src sh
+./sign-zip.sh \
+  -f my-app-v1.0.0.zip \
+  -a my-alias \
+  -r eastus.codesigning.azure.net \
+  -V
+#+end_src
+
+See =./sign-zip.sh --help= for all options.
+
+** License
+
+GPLv2
+
+** Contributing
+
+Contributions are welcome! Please open an issue or submit a pull
+request.

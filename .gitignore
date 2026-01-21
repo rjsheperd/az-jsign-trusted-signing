@@ -1,0 +1,32 @@
+# Signing artifacts
+*.zip
+*.p12
+*.pfx
+signing-temp/
+
+# Azure
+*.crt
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.envrc
+.direnv/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temp files
+*.tmp
+*.temp
