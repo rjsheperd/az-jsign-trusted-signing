@@ -64,7 +64,10 @@ runs:
           exit 1
         fi
 
-    - name: Setup Nix
+    - name: Install Nix
+      uses: cachix/install-nix-action@v30
+
+    - name: Nix Develop
       uses: nicknovitski/nix-develop@v1
 
     - name: Sign ZIP file
