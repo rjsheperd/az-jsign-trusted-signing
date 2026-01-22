@@ -53,7 +53,7 @@
         '';
       in
       {
-        devShell = pkgs.mkShell {
+        devShells.default = pkgs.mkShell {
           buildInputs = [
             python."3.7"
             azure-cli-with-extensions
