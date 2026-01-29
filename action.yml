@@ -69,6 +69,8 @@ runs:
 
     - name: Nix Develop
       uses: nicknovitski/nix-develop@v1
+      with:
+        arguments: '--option download-buffer-size 524288000'
 
     - name: Sign ZIP file
       id: sign

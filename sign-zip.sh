@@ -135,7 +135,6 @@ check_dependencies() {
 }
 
 get_access_token() {
-    log "Obtaining Azure access token..."
     az account get-access-token \
         --resource https://codesigning.azure.net \
         --query accessToken \
@@ -147,13 +146,14 @@ sign_windows_binary() {
     local storepass="$2"
 
     log_verbose "Signing $file"
+    log_verbose "Signing with: $PWD/$JSIGN_JAR"
 
-    java -jar "$JSIGN_JAR" \
+    java -jar "$PWD/$JSIGN_JAR" \
         --storetype TRUSTEDSIGNING \
         --keystore "https://${AZURE_REGION_DOMAIN}" \
-        --storepass "$storepass" \
+        --storepass $storepass \
         --alias "$TS_ALIAS" \
-        "$file" || error "Failed to sign $file"
+        "$PWD/$file"
 }
 
 sign_windows_binaries() {
@@ -164,21 +164,20 @@ sign_windows_binaries() {
 
     # Find all .exe and .dll files
     while IFS= read -r -d '' file; do
-        ((count++))
         (
-            sign_windows_binary "$file" "$storepass"
+          sign_windows_binary "$file" "$storepass"
         ) &
 
         # Limit parallel jobs
         if [[ $(jobs -r -p | wc -l) -ge $PARALLEL_JOBS ]]; then
-            wait -n
+          wait -n
         fi
     done < <(find "$EXTRACT_DIR" -type f \( -name "*.exe" -o -name "*.dll" \) -print0)
 
     # Wait for all background jobs to complete
     wait
 
-    log "Signed $count Windows binaries"
+    log "Signed Windows binaries"
 }
 
 sign_jar_files() {
@@ -204,7 +203,7 @@ sign_jar_files() {
             ${VERBOSE:+-verbose} \
             -keystore NONE \
             -storetype TRUSTEDSIGNING \
-            "$jar_file" "$TS_ALIAS" || error "Failed to sign $jar_file"
+            "$jar_file" "$TS_ALIAS"
 
         log_verbose "Verifying JAR signature: $jar_file"
         jarsigner -verify "$jar_file" || error "JAR signature verification failed: $jar_file"
@@ -310,7 +309,11 @@ main() {
 
     # Create signed ZIP
     local output_file
-    output_file="$(basename "$zip_file" .zip)-${version}-signed.zip"
+    if [[ -z $(extract_version_from_filename) ]]; then
+        output_file="$(basename "$zip_file" .zip)-signed.zip"
+    else
+        output_file="$(basename "$zip_file" .zip)-${version}-signed.zip"
+    fi
 
     log "Creating signed ZIP: $output_file"
     (cd "$EXTRACT_DIR" && zip -qr "../$output_file" .) || error "Failed to create signed ZIP"
