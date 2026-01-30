@@ -55,9 +55,6 @@ outputs:
 
 runs:
   using: 'composite'
-  permissions:
-    contents: read
-    id-token: write
   steps:
     - name: Validate inputs
       shell: bash
