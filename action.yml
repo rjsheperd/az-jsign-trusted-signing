@@ -77,8 +77,8 @@ runs:
         AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
         AZURE_CLIENT_SECRET: ${{ inputs.azure-client-secret }}
       run: |
-        # Use Nix development environment to build everything
-        nix develop --option download-buffer-size 524288000 --command bash -c "
+        # Use Nix development environment from the action's flake
+        nix develop ${{ github.action_path }} --option download-buffer-size 524288000 --command bash -c "
 
           # Build command arguments
           ARGS=\"-f ${{ inputs.file }}\"
