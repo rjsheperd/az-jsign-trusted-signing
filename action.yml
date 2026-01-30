@@ -106,38 +106,22 @@ runs:
         echo "Signing with args: $ARGS"
 
         # Use Nix development environment from the action's flake
-        nix develop ${{ github.action_path }} --option download-buffer-size 524288000 --command bash -c "
+        # Capture output to parse the signed file path
+        SCRIPT_OUTPUT=$(nix develop ${{ github.action_path }} --option download-buffer-size 524288000 --command bash -c "
           # Run signing script
           cd \"${{ github.workspace }}\"
           bash ${{ github.action_path }}/sign-zip.sh ${ARGS}
-        "
+        ")
 
-        # Determine output file name
-        ZIP_BASENAME="$(basename "${{ inputs.file }}" .zip)"
+        echo "$SCRIPT_OUTPUT"
 
-        # Extract or use provided version
-        if [[ -n "${{ inputs.version }}" ]]; then
-          VERSION="${{ inputs.version }}"
-        else
-          # Extract version from filename
-          if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not detect version from filename"
+        # Extract the signed file path from script output
+        SIGNED_FILE=$(echo "$SCRIPT_OUTPUT" | grep "^SIGNED_FILE=" | cut -d= -f2)
+
+        if [[ -z "$SIGNED_FILE" ]]; then
+          echo "::error::Could not determine signed file path from script output"
           exit 1
-          fi
         fi
 
-        SIGNED_FILE="${ZIP_BASENAME}-${VERSION}-signed.zip"
-
-        # Set outputs
         echo "signed-file=${SIGNED_FILE}" >> $GITHUB_OUTPUT
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-
         echo "::notice::Signing complete: ${SIGNED_FILE}"

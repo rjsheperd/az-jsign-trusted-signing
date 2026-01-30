@@ -57,6 +57,7 @@ Version Detection:
     - app-v1.0.0.zip        -> 1.0.0
     - app-1.0.0-beta.zip    -> 1.0.0-beta
     - app_v2.1.3.zip        -> 2.1.3
+    - behave7.1.4.zip       -> 7.1.4
 
 Examples:
   # Auto-detect version from filename
@@ -111,12 +112,15 @@ extract_version_from_filename() {
 
     local version=""
 
-    # Pattern 1: Extract vX.Y.Z or X.Y.Z with optional prerelease
+    # Pattern 1: Extract vX.Y.Z or X.Y.Z with optional prerelease (with - or _ separator)
     if [[ "$basename" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
         version="${BASH_REMATCH[1]}"
     elif [[ "$basename" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
         version="${BASH_REMATCH[1]}"
-    # Pattern 2: Try X.Y format (shorter version)
+    # Pattern 2: Version directly after name (e.g., behave7.1.4.zip)
+    elif [[ "$basename" =~ ([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+        version="${BASH_REMATCH[1]}"
+    # Pattern 3: Try X.Y format (shorter version)
     elif [[ "$basename" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
         version="${BASH_REMATCH[1]}"
     elif [[ "$basename" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
@@ -373,6 +377,9 @@ main() {
     fi
 
     log "✓ Signing complete: $output_file"
+
+    # Output the signed file path for GitHub Actions to capture
+    echo "SIGNED_FILE=$output_file"
 }
 
 # Run main function
