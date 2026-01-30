@@ -55,6 +55,9 @@ outputs:
 
 runs:
   using: 'composite'
+  permissions:
+    contents: read
+    id-token: write
   steps:
     - name: Validate inputs
       shell: bash
@@ -66,6 +69,10 @@ runs:
 
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@main
+
+    - name: Cache Nix store
+      if: ${{ !env.ACT }}
+      uses: DeterminateSystems/magic-nix-cache-action@main
 
     - name: Sign ZIP file
       id: sign
@@ -99,6 +106,8 @@ runs:
           if [[ \"${{ inputs.verbose }}\" == \"true\" ]]; then
             ARGS=\"$ARGS -V\"
           fi
+
+          echo \"Signing with args: $ARGS\"
 
           # Run signing script
           cd \"${{ github.workspace }}\"
