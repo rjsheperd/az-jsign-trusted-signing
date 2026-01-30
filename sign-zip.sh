@@ -205,36 +205,29 @@ sign_windows_binaries() {
     log "Signed Windows binaries"
 }
 
-sign_jar_files() {
+sign_jar_file() {
     local storepass="$1"
-    local jar_count=0
+    local jar_file="$2"
 
-    log "Signing JAR files..."
+    log_verbose "Signing JAR: $jar_file"
 
-    while IFS= read -r -d '' jar_file; do
-        ((jar_count++))
-        log_verbose "Signing JAR: $jar_file"
+    jarsigner \
+        -J-cp -J"$PWD/$JSIGN_JAR" \
+        -J--add-modules -Jjava.sql \
+        -providerClass net.jsign.jca.JsignJcaProvider \
+        -providerArg "$AZURE_REGION_DOMAIN" \
+        -storepass "$storepass" \
+        -tsadigestalg SHA-256 \
+        -sigalg SHA256withRSA \
+        -digestalg SHA-256 \
+        -tsa "$TIMESTAMP_URL" \
+        ${VERBOSE:+-verbose} \
+        -keystore NONE \
+        -storetype TRUSTEDSIGNING \
+        "$jar_file" "$TS_ALIAS"
 
-        jarsigner \
-            -J-cp -J"$PWD/$JSIGN_JAR" \
-            -J--add-modules -Jjava.sql \
-            -providerClass net.jsign.jca.JsignJcaProvider \
-            -providerArg "$AZURE_REGION_DOMAIN" \
-            -storepass "$storepass" \
-            -tsadigestalg SHA-256 \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            -tsa "$TIMESTAMP_URL" \
-            ${VERBOSE:+-verbose} \
-            -keystore NONE \
-            -storetype TRUSTEDSIGNING \
-            "$jar_file" "$TS_ALIAS"
-
-        log_verbose "Verifying JAR signature: $jar_file"
-        jarsigner -verify "$jar_file" || error "JAR signature verification failed: $jar_file"
-    done < <(find "$EXTRACT_DIR" -type f -name "*.jar" -print0)
-
-    log "Signed and verified $jar_count JAR files"
+    log_verbose "Verifying JAR signature: $jar_file"
+    jarsigner -verify "$jar_file" || error "JAR signature verification failed: $jar_file"
 }
 
 main() {
@@ -350,12 +343,19 @@ main() {
     # Sign Windows binaries
     sign_windows_binaries "$storepass"
 
-    # Sign JAR files
-    sign_jar_files "$storepass"
+    # Sign JAR file (find the first/only JAR)
+    local jar_file
+    jar_file=$(find "$EXTRACT_DIR" -name "*.jar" -type f | head -n1)
+    if [[ -n "$jar_file" && -f "$jar_file" ]]; then
+        log "Found JAR file: $jar_file"
+        sign_jar_file "$storepass" "$jar_file"
+    else
+        log "No JAR file found in: $EXTRACT_DIR"
+    fi
 
     # Create signed ZIP
     local output_file
-    if [[ -z $(extract_version_from_filename) ]]; then
+    if [[ -z $(extract_version_from_filename "$zip_file") ]]; then
         output_file="$(basename "$zip_file" .zip)-signed.zip"
     else
         output_file="$(basename "$zip_file" .zip)-${version}-signed.zip"
