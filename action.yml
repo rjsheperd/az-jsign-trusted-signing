@@ -65,12 +65,7 @@ runs:
         fi
 
     - name: Install Nix
-      uses: cachix/install-nix-action@v30
-
-    - name: Nix Develop
-      uses: nicknovitski/nix-develop@v1
-      with:
-        arguments: '--option download-buffer-size 524288000'
+      uses: DeterminateSystems/nix-installer-action@main
 
     - name: Sign ZIP file
       id: sign
@@ -78,51 +73,58 @@ runs:
       env:
         TS_ALIAS: ${{ inputs.alias }}
         AZURE_REGION_DOMAIN: ${{ inputs.region }}
+        AZURE_TENANT_ID: ${{ inputs.azure-tenant-id }}
+        AZURE_CLIENT_ID: ${{ inputs.azure-client-id }}
+        AZURE_CLIENT_SECRET: ${{ inputs.azure-client-secret }}
       run: |
-        # Build command arguments
-        ARGS="-f ${{ inputs.file }}"
+        # Use Nix development environment to build everything
+        nix develop --option download-buffer-size 524288000 --command bash -c "
 
-        if [[ -n "${{ inputs.version }}" ]]; then
-          ARGS="$ARGS -v ${{ inputs.version }}"
-        fi
+          # Build command arguments
+          ARGS=\"-f ${{ inputs.file }}\"
 
-        ARGS="$ARGS -a ${{ inputs.alias }}"
-        ARGS="$ARGS -r ${{ inputs.region }}"
-        ARGS="$ARGS -j ${{ inputs.parallel-jobs }}"
-        ARGS="$ARGS -d ${{ inputs.extract-dir }}"
+          if [[ -n \"${{ inputs.version }}\" ]]; then
+            ARGS=\"$ARGS -v ${{ inputs.version }}\"
+          fi
 
-        if [[ "${{ inputs.keep-temp }}" == "true" ]]; then
-          ARGS="$ARGS -k"
-        fi
+          ARGS=\"$ARGS -a ${{ inputs.alias }}\"
+          ARGS=\"$ARGS -r ${{ inputs.region }}\"
+          ARGS=\"$ARGS -j ${{ inputs.parallel-jobs }}\"
+          ARGS=\"$ARGS -d ${{ inputs.extract-dir }}\"
 
-        if [[ "${{ inputs.verbose }}" == "true" ]]; then
-          ARGS="$ARGS -V"
-        fi
+          if [[ \"${{ inputs.keep-temp }}\" == \"true\" ]]; then
+            ARGS=\"$ARGS -k\"
+          fi
 
-        # Run signing script
-        cd "${{ github.workspace }}"
-        "${{ github.action_path }}/sign-zip.sh" $ARGS
+          if [[ \"${{ inputs.verbose }}\" == \"true\" ]]; then
+            ARGS=\"$ARGS -V\"
+          fi
+
+          # Run signing script
+          cd \"${{ github.workspace }}\"
+          \"${{ github.action_path }}/sign-zip.sh\" $ARGS
+        "
 
         # Determine output file name
         ZIP_BASENAME="$(basename "${{ inputs.file }}" .zip)"
 
         # Extract or use provided version
         if [[ -n "${{ inputs.version }}" ]]; then
-          VERSION="${{ inputs.version }}"
+        VERSION="${{ inputs.version }}"
         else
-          # Extract version from filename
-          if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            echo "::error::Could not detect version from filename"
-            exit 1
-          fi
+        # Extract version from filename
+        if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+        VERSION="${BASH_REMATCH[1]}"
+        elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+        VERSION="${BASH_REMATCH[1]}"
+        elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+        VERSION="${BASH_REMATCH[1]}"
+        elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+        VERSION="${BASH_REMATCH[1]}"
+        else
+        echo "::error::Could not detect version from filename"
+        exit 1
+        fi
         fi
 
         SIGNED_FILE="${ZIP_BASENAME}-${VERSION}-signed.zip"
