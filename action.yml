@@ -83,34 +83,33 @@ runs:
       run: |
         echo "Inputs ${{ inputs.file }}"
 
+        # Build command arguments
+        ARGS="-f ${{ inputs.file }}"
+
+        if [[ -n "${{ inputs.version }}" ]]; then
+        ARGS="$ARGS -v ${{ inputs.version }}"
+        fi
+
+        ARGS="$ARGS -a ${{ inputs.alias }}"
+        ARGS="$ARGS -r ${{ inputs.region }}"
+        ARGS="$ARGS -j ${{ inputs.parallel-jobs }}"
+        ARGS="$ARGS -d ${{ inputs.extract-dir }}"
+
+        if [[ "${{ inputs.keep-temp }}" == "true" ]]; then
+          ARGS="$ARGS -k"
+        fi
+
+        if [[ "${{ inputs.verbose }}" == "true" ]]; then
+          ARGS="$ARGS -V"
+        fi
+
+        echo "Signing with args: $ARGS"
+
         # Use Nix development environment from the action's flake
         nix develop ${{ github.action_path }} --option download-buffer-size 524288000 --command bash -c "
-
-          # Build command arguments
-          ARGS=\"-f ${{ inputs.file }}\"
-
-          if [[ -n \"${{ inputs.version }}\" ]]; then
-            ARGS=\"$ARGS -v ${{ inputs.version }}\"
-          fi
-
-          ARGS=\"$ARGS -a ${{ inputs.alias }}\"
-          ARGS=\"$ARGS -r ${{ inputs.region }}\"
-          ARGS=\"$ARGS -j ${{ inputs.parallel-jobs }}\"
-          ARGS=\"$ARGS -d ${{ inputs.extract-dir }}\"
-
-          if [[ \"${{ inputs.keep-temp }}\" == \"true\" ]]; then
-            ARGS=\"$ARGS -k\"
-          fi
-
-          if [[ \"${{ inputs.verbose }}\" == \"true\" ]]; then
-            ARGS=\"$ARGS -V\"
-          fi
-
-          echo \"Signing with args: $ARGS\"
-
           # Run signing script
           cd \"${{ github.workspace }}\"
-          \"${{ github.action_path }}/sign-zip.sh\" $ARGS
+          bash ${{ github.action_path }}/sign-zip.sh ${ARGS}
         "
 
         # Determine output file name
@@ -118,21 +117,21 @@ runs:
 
         # Extract or use provided version
         if [[ -n "${{ inputs.version }}" ]]; then
-        VERSION="${{ inputs.version }}"
+          VERSION="${{ inputs.version }}"
         else
-        # Extract version from filename
-        if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-        VERSION="${BASH_REMATCH[1]}"
-        elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-        VERSION="${BASH_REMATCH[1]}"
-        elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-        VERSION="${BASH_REMATCH[1]}"
-        elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
-        VERSION="${BASH_REMATCH[1]}"
-        else
-        echo "::error::Could not detect version from filename"
-        exit 1
-        fi
+          # Extract version from filename
+          if [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ -v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          elif [[ "$ZIP_BASENAME" =~ _v?([0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Could not detect version from filename"
+          exit 1
+          fi
         fi
 
         SIGNED_FILE="${ZIP_BASENAME}-${VERSION}-signed.zip"
