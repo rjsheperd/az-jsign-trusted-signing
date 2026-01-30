@@ -74,6 +74,7 @@ runs:
 
     - name: Sign ZIP file
       id: sign
+      shell: bash
       env:
         TS_ALIAS: ${{ inputs.alias }}
         AZURE_REGION_DOMAIN: ${{ inputs.region }}
