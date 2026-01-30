@@ -30,6 +30,11 @@ Required Arguments:
   -a, --alias ALIAS        Azure Trusted Signing alias (or set TS_ALIAS env var)
   -r, --region REGION      Azure region domain (or set AZURE_REGION_DOMAIN env var)
 
+Azure Authentication (required for service principal login):
+  --client-id ID           Azure client/app ID (or set AZURE_CLIENT_ID env var)
+  --client-secret SECRET   Azure client secret (or set AZURE_CLIENT_SECRET env var)
+  --tenant-id ID           Azure tenant ID (or set AZURE_TENANT_ID env var)
+
 Optional Arguments:
   -v, --version VERSION    Version string for output file (auto-detected from filename if not provided)
   -j, --jobs NUM           Number of parallel signing jobs (default: $DEFAULT_PARALLEL_JOBS)
@@ -41,6 +46,9 @@ Optional Arguments:
 Environment Variables:
   TS_ALIAS                 Default alias if not provided via -a
   AZURE_REGION_DOMAIN      Default Azure region if not provided via -r
+  AZURE_CLIENT_ID          Azure service principal client/app ID
+  AZURE_CLIENT_SECRET      Azure service principal client secret
+  AZURE_TENANT_ID          Azure tenant ID
 
 Version Detection:
   If -v is not provided, the script will attempt to extract the version from the filename.
@@ -57,7 +65,10 @@ Examples:
   # Explicit version
   $SCRIPT_NAME -f app.zip -v 1.0.0 -a my-alias -r eastus.codesigning.azure.net
 
-  # Using environment variables
+  # Using environment variables for auth
+  export AZURE_CLIENT_ID=my-app-id
+  export AZURE_CLIENT_SECRET=my-secret
+  export AZURE_TENANT_ID=my-tenant
   export TS_ALIAS=my-alias
   export AZURE_REGION_DOMAIN=eastus.codesigning.azure.net
   $SCRIPT_NAME -f my-app-v2.3.1.zip
@@ -132,6 +143,20 @@ check_dependencies() {
     if [[ ! -f "$JSIGN_JAR" ]]; then
         error "JSSign JAR not found: $JSIGN_JAR"
     fi
+}
+
+azure_login() {
+    local client_id="$1"
+    local client_secret="$2"
+    local tenant_id="$3"
+
+    log "Logging in to Azure with service principal..."
+    az login --service-principal \
+        --username "$client_id" \
+        --password "$client_secret" \
+        --tenant "$tenant_id" \
+        --output none || error "Failed to login to Azure"
+    log "Azure login successful"
 }
 
 get_access_token() {
@@ -215,6 +240,9 @@ sign_jar_files() {
 main() {
     local zip_file=""
     local version=""
+    local client_id="${AZURE_CLIENT_ID:-}"
+    local client_secret="${AZURE_CLIENT_SECRET:-}"
+    local tenant_id="${AZURE_TENANT_ID:-}"
 
     # Parse command-line arguments
     while [[ $# -gt 0 ]]; do
@@ -233,6 +261,18 @@ main() {
                 ;;
             -r|--region)
                 AZURE_REGION_DOMAIN="$2"
+                shift 2
+                ;;
+            --client-id)
+                client_id="$2"
+                shift 2
+                ;;
+            --client-secret)
+                client_secret="$2"
+                shift 2
+                ;;
+            --tenant-id)
+                tenant_id="$2"
                 shift 2
                 ;;
             -j|--jobs)
@@ -264,6 +304,9 @@ main() {
     [[ -z "$zip_file" ]] && error "ZIP file is required (-f). Use -h for help."
     [[ -z "${TS_ALIAS:-}" ]] && error "Alias is required (-a or TS_ALIAS env var). Use -h for help."
     [[ -z "${AZURE_REGION_DOMAIN:-}" ]] && error "Azure region domain is required (-r or AZURE_REGION_DOMAIN env var). Use -h for help."
+    [[ -z "$client_id" ]] && error "Azure client ID is required (--client-id or AZURE_CLIENT_ID env var). Use -h for help."
+    [[ -z "$client_secret" ]] && error "Azure client secret is required (--client-secret or AZURE_CLIENT_SECRET env var). Use -h for help."
+    [[ -z "$tenant_id" ]] && error "Azure tenant ID is required (--tenant-id or AZURE_TENANT_ID env var). Use -h for help."
 
     # Validate file exists
     [[ ! -f "$zip_file" ]] && error "ZIP file not found: $zip_file"
@@ -286,6 +329,9 @@ main() {
     log "  Alias: $TS_ALIAS"
     log "  Region: $AZURE_REGION_DOMAIN"
     log "  Parallel jobs: $PARALLEL_JOBS"
+
+    # Login to Azure using service principal
+    azure_login "$client_id" "$client_secret" "$tenant_id"
 
     # Get Azure access token
     local storepass
