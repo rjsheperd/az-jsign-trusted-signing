@@ -1,42 +1,36 @@
 {
-  description = "Nix Flake for Azure CLI.";
+  description = "Azure Trusted Signing with JSign";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    nixpkgs-python.url = "github:cachix/nixpkgs-python";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-python, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        python = nixpkgs-python.packages.${system};
-        azure-cli-with-extensions = (pkgs.azure-cli.withExtensions [ pkgs.azure-cli-extensions.trustedsigning ]);
 
-        # Create a custom CA bundle that includes the Microsoft cert
+        # JSign JAR derivation - cached separately
+        jsign = pkgs.fetchurl {
+          url = "https://github.com/ebourg/jsign/releases/download/7.4/jsign-7.4.jar";
+          sha256 = "2abf2ade9ea322acc2d60c24794eadc465ff9380938fca4c932d09e0b25f1c28";
+        };
+
+        # Custom CA bundle with Microsoft cert - cached separately
         customCaBundle = pkgs.cacert.override {
           extraCertificateFiles = [ ./microsoft_root_ca_2020.pem ];
         };
 
-        # Create a Java truststore from the custom CA bundle
+        # Java truststore derivation - cached separately
         javaTrustStore = pkgs.runCommand "java-truststore" {
-          buildInputs = [ pkgs.jdk21_headless ];
+          nativeBuildInputs = [ pkgs.jdk21_headless ];
         } ''
           mkdir -p $out
 
           # Split the CA bundle into individual certificates and import each one
-          ${pkgs.jdk21_headless}/bin/keytool -importcert \
-            -noprompt \
-            -trustcacerts \
-            -alias custom-ca-bundle \
-            -file ${customCaBundle}/etc/ssl/certs/ca-bundle.crt \
-            -keystore $out/truststore.jks \
-            -storepass changeit \
-            -storetype JKS || true
-
-          # Alternative: Use the awk script to split and import individual certs
-          awk 'BEGIN {c=0} /BEGIN CERT/{c++} {print > ("cert" c ".pem")}' ${customCaBundle}/etc/ssl/certs/ca-bundle.crt
+          awk 'BEGIN {c=0} /BEGIN CERT/{c++} {print > ("cert" c ".pem")}' \
+            ${customCaBundle}/etc/ssl/certs/ca-bundle.crt
 
           for cert in cert*.pem; do
             if [ -f "$cert" ]; then
@@ -51,16 +45,39 @@
             fi
           done
         '';
+
+        # Azure CLI with trusted signing extension
+        azureCli = pkgs.azure-cli.withExtensions [
+          pkgs.azure-cli-extensions.trustedsigning
+        ];
+
+        # Wrapper script that sets up environment and copies JSign
+        signingEnvSetup = pkgs.writeShellScriptBin "setup-signing-env" ''
+          # Copy JSign JAR to current directory if not present
+          if [ ! -f "jsign-7.4.jar" ]; then
+            cp ${jsign} jsign-7.4.jar
+            echo "Copied JSign JAR to current directory"
+          fi
+        '';
+
       in
       {
+        # Export individual packages for better caching
+        packages = {
+          inherit jsign customCaBundle javaTrustStore azureCli;
+          default = signingEnvSetup;
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            python."3.7"
-            azure-cli-with-extensions
+            azureCli
             pkgs.jdk21_headless
+            pkgs.unzip
+            pkgs.zip
+            signingEnvSetup
           ];
 
-          # Set environment variables to use the custom CA bundle
+          # Set environment variables for custom CA bundle
           SSL_CERT_FILE = "${customCaBundle}/etc/ssl/certs/ca-bundle.crt";
           REQUESTS_CA_BUNDLE = "${customCaBundle}/etc/ssl/certs/ca-bundle.crt";
           NIX_SSL_CERT_FILE = "${customCaBundle}/etc/ssl/certs/ca-bundle.crt";
@@ -70,10 +87,19 @@
           JAVAX_NET_SSL_TRUSTSTOREPASSWORD = "changeit";
           JAVAX_NET_SSL_TRUSTSTORETYPE = "JKS";
 
+          # Make JSign available
+          JSIGN_JAR = "${jsign}";
+
           shellHook = ''
-            echo "Custom CA bundle loaded with Microsoft Identity Verification Root CA"
-            echo "SSL_CERT_FILE: $SSL_CERT_FILE"
-            echo "JAVAX_NET_SSL_TRUSTSTORE: $JAVAX_NET_SSL_TRUSTSTORE"
+            # Copy JSign JAR to current directory for the signing script
+            if [ ! -f "jsign-7.4.jar" ]; then
+              cp ${jsign} jsign-7.4.jar
+            fi
+
+            echo "Azure Trusted Signing environment ready"
+            echo "  JSign: ${jsign}"
+            echo "  CA Bundle: ${customCaBundle}"
+            echo "  Java Truststore: ${javaTrustStore}"
           '';
         };
       });
